@@ -1,0 +1,399 @@
+{
+    "properties": {
+        "provisioningState": "Succeeded",
+        "createdTime": "2025-04-27T20:56:37.1153482Z",
+        "changedTime": "2025-05-05T15:25:29.8834392Z",
+        "state": "Enabled",
+        "version": "08584551481556197835",
+        "accessEndpoint": "https://prod-05.francecentral.logic.azure.com:443/workflows/11d68945e9a84e1cbf3fdd624641c358",
+        "definition": {
+            "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+                "$connections": {
+                    "defaultValue": {},
+                    "type": "Object"
+                }
+            },
+            "triggers": {
+                "Microsoft_Sentinel_incident": {
+                    "type": "ApiConnectionWebhook",
+                    "inputs": {
+                        "host": {
+                            "connection": {
+                                "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                            }
+                        },
+                        "body": {
+                            "callback_url": "@{listCallbackUrl()}"
+                        },
+                        "path": "/incident-creation"
+                    }
+                }
+            },
+            "actions": {
+                "For_each": {
+                    "foreach": "@triggerBody()?['object']?['properties']?['Alerts']",
+                    "actions": {
+                        "Alert_-_Get_incident": {
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/Incidents/subscriptions/@{encodeURIComponent(triggerBody()?['workspaceInfo']?['SubscriptionId'])}/resourceGroups/@{encodeURIComponent(triggerBody()?['workspaceInfo']?['ResourceGroupName'])}/workspaces/@{encodeURIComponent(triggerBody()?['workspaceId'])}/alerts/@{encodeURIComponent(items('For_each')?['properties']?['systemAlertId'])}"
+                            }
+                        },
+                        "Entities_-_Get_IPs": {
+                            "runAfter": {
+                                "Alert_-_Get_incident": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                                "path": "/entities/ip"
+                            }
+                        },
+                        "For_each_1": {
+                            "foreach": "@body('Entities_-_Get_IPs')?['IPs']",
+                            "actions": {
+                                "Get_an_IP_report": {
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['virustotal']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "/api/v3/ip_addresses/connectorV2/@{encodeURIComponent(item()?['Address'])}"
+                                    }
+                                },
+                                "Add_comment_to_incident_(V3)": {
+                                    "runAfter": {
+                                        "MessageBody": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "body": {
+                                            "incidentArmId": "@body('Alert_-_Get_incident')?['id']",
+                                            "message": "<p class=\"editor-paragraph\">***VirusTotal Analysis Result***</p><br><p class=\"editor-paragraph\">Owner : @{body('Get_an_IP_report')?['data']?['attributes']?['as_owner']}</p><p class=\"editor-paragraph\">Country : @{body('Get_an_IP_report')?['data']?['attributes']?['country']}</p><p class=\"editor-paragraph\">Last analysis statistics Malicious : @{body('Get_an_IP_report')?['data']?['attributes']?['last_analysis_stats']?['malicious']}</p><p class=\"editor-paragraph\">Last analysis statistics Suspicious : @{body('Get_an_IP_report')?['data']?['attributes']?['last_analysis_stats']?['suspicious']}</p><br><p class=\"editor-paragraph\">***IPinfo Analysis Result***</p><p class=\"editor-paragraph\"><br>@{body('Analyse_With_IPinfo')}</p>"
+                                        },
+                                        "path": "/Incidents/Comment"
+                                    }
+                                },
+                                "Send_an_email_(V2)": {
+                                    "runAfter": {
+                                        "Add_comment_to_incident_(V3)": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['office365-1']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "body": {
+                                            "To": "Issam.Abdelli@intellisecsolutions.com",
+                                            "Subject": "New Incident assigned",
+                                            "Body": "<p class=\"editor-paragraph\">New Incident assigned!</p><br><p class=\"editor-paragraph\">Title : @{triggerBody()?['object']?['properties']?['title']}</p><p class=\"editor-paragraph\">Severity : @{body('Alert_-_Get_incident')?['properties']?['severity']}</p><p class=\"editor-paragraph\">Description : @{triggerBody()?['object']?['properties']?['description']}</p><p class=\"editor-paragraph\">Incident URL : @{body('Alert_-_Get_incident')?['properties']?['incidentUrl']}<br><br>***VirusTotal Analysis***</p><p class=\"editor-paragraph\">Last analysis statistics Malicious : @{body('Get_an_IP_report')?['data']?['attributes']?['last_analysis_stats']?['malicious']}<br>Last analysis statistics Suspicious : @{body('Get_an_IP_report')?['data']?['attributes']?['last_analysis_stats']?['suspicious']}</p><br><p class=\"editor-paragraph\">***IPinfo Analysis Result***</p><p class=\"editor-paragraph\">@{body('Analyse_With_IPinfo')}</p><br>",
+                                            "Importance": "High"
+                                        },
+                                        "path": "/v2/Mail"
+                                    }
+                                },
+                                "Analyse_With_IPinfo": {
+                                    "runAfter": {
+                                        "Get_an_IP_report": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Http",
+                                    "inputs": {
+                                        "uri": "https://ipinfo.io/@{item()?['Address']}?token=901aa00af97857",
+                                        "method": "GET"
+                                    },
+                                    "runtimeConfiguration": {
+                                        "contentTransfer": {
+                                            "transferMode": "Chunked"
+                                        }
+                                    }
+                                },
+                                "Parse_JSON": {
+                                    "runAfter": {
+                                        "Analyse_With_IPinfo": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ParseJson",
+                                    "inputs": {
+                                        "content": "@body('Analyse_With_IPinfo')",
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "ip": {
+                                                    "type": "string"
+                                                },
+                                                "city": {
+                                                    "type": "string"
+                                                },
+                                                "region": {
+                                                    "type": "string"
+                                                },
+                                                "country": {
+                                                    "type": "string"
+                                                },
+                                                "loc": {
+                                                    "type": "string"
+                                                },
+                                                "org": {
+                                                    "type": "string"
+                                                },
+                                                "postal": {
+                                                    "type": "string"
+                                                },
+                                                "timezone": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "MessageBody": {
+                                    "runAfter": {
+                                        "Parse_JSON": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Compose",
+                                    "inputs": "IPInfo Report:\n\nCountry: @{body('Parse_JSON')?['country']}\n"
+                                }
+                            },
+                            "runAfter": {
+                                "Entities_-_Get_IPs": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        }
+                    },
+                    "runAfter": {},
+                    "type": "Foreach"
+                }
+            },
+            "outputs": {}
+        },
+        "parameters": {
+            "$connections": {
+                "value": {
+                    "azuresentinel-1": {
+                        "id": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/providers/Microsoft.Web/locations/francecentral/managedApis/azuresentinel",
+                        "connectionId": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/resourceGroups/IntellisecMSSP/providers/Microsoft.Web/connections/azuresentinel-4",
+                        "connectionName": "azuresentinel-4"
+                    },
+                    "virustotal": {
+                        "id": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/providers/Microsoft.Web/locations/francecentral/managedApis/virustotal",
+                        "connectionId": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/resourceGroups/IntellisecMSSP/providers/Microsoft.Web/connections/virustotal",
+                        "connectionName": "virustotal"
+                    },
+                    "office365-1": {
+                        "id": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/providers/Microsoft.Web/locations/francecentral/managedApis/office365",
+                        "connectionId": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/resourceGroups/IntellisecMSSP/providers/Microsoft.Web/connections/office365-2",
+                        "connectionName": "office365-2"
+                    }
+                }
+            }
+        },
+        "endpointsConfiguration": {
+            "workflow": {
+                "outgoingIpAddresses": [
+                    {
+                        "address": "52.143.164.80"
+                    },
+                    {
+                        "address": "52.143.164.15"
+                    },
+                    {
+                        "address": "40.89.186.30"
+                    },
+                    {
+                        "address": "20.188.39.105"
+                    },
+                    {
+                        "address": "40.89.191.161"
+                    },
+                    {
+                        "address": "40.89.188.169"
+                    },
+                    {
+                        "address": "40.89.186.28"
+                    },
+                    {
+                        "address": "40.89.190.104"
+                    },
+                    {
+                        "address": "20.40.138.112"
+                    },
+                    {
+                        "address": "20.40.140.149"
+                    },
+                    {
+                        "address": "51.11.237.219"
+                    },
+                    {
+                        "address": "51.11.237.216"
+                    },
+                    {
+                        "address": "20.74.18.58"
+                    },
+                    {
+                        "address": "20.74.18.36"
+                    },
+                    {
+                        "address": "20.74.22.121"
+                    },
+                    {
+                        "address": "20.74.20.147"
+                    },
+                    {
+                        "address": "20.74.94.62"
+                    },
+                    {
+                        "address": "20.74.88.179"
+                    },
+                    {
+                        "address": "20.74.23.87"
+                    },
+                    {
+                        "address": "20.74.22.119"
+                    },
+                    {
+                        "address": "20.74.106.61"
+                    },
+                    {
+                        "address": "20.74.105.214"
+                    },
+                    {
+                        "address": "20.74.34.113"
+                    },
+                    {
+                        "address": "20.74.33.177"
+                    },
+                    {
+                        "address": "20.19.61.105"
+                    },
+                    {
+                        "address": "20.74.109.28"
+                    },
+                    {
+                        "address": "20.19.113.120"
+                    },
+                    {
+                        "address": "20.74.106.31"
+                    }
+                ],
+                "accessEndpointIpAddresses": [
+                    {
+                        "address": "52.143.162.83"
+                    },
+                    {
+                        "address": "20.188.33.169"
+                    },
+                    {
+                        "address": "52.143.156.55"
+                    },
+                    {
+                        "address": "52.143.158.203"
+                    },
+                    {
+                        "address": "20.40.139.209"
+                    },
+                    {
+                        "address": "51.11.237.239"
+                    },
+                    {
+                        "address": "20.74.20.86"
+                    },
+                    {
+                        "address": "20.74.22.248"
+                    },
+                    {
+                        "address": "20.74.94.80"
+                    },
+                    {
+                        "address": "20.74.91.234"
+                    },
+                    {
+                        "address": "20.74.106.82"
+                    },
+                    {
+                        "address": "20.74.35.121"
+                    },
+                    {
+                        "address": "20.19.63.163"
+                    },
+                    {
+                        "address": "20.19.56.186"
+                    }
+                ]
+            },
+            "connector": {
+                "outgoingIpAddresses": [
+                    {
+                        "address": "40.89.135.2"
+                    },
+                    {
+                        "address": "40.79.130.208/28"
+                    },
+                    {
+                        "address": "40.79.148.96/27"
+                    },
+                    {
+                        "address": "51.138.215.48/28"
+                    },
+                    {
+                        "address": "51.138.215.64/27"
+                    },
+                    {
+                        "address": "51.11.229.156"
+                    },
+                    {
+                        "address": "51.11.229.148"
+                    }
+                ]
+            }
+        }
+    },
+    "id": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/resourceGroups/IntellisecMSSP/providers/Microsoft.Logic/workflows/IP_Analysis_Incident_Playbook",
+    "name": "IP_Analysis_Incident_Playbook",
+    "type": "Microsoft.Logic/workflows",
+    "location": "francecentral",
+    "identity": {
+        "type": "SystemAssigned",
+        "principalId": "5fb9c62d-39fb-4460-b801-95fce1e489c4",
+        "tenantId": "0bd1fd86-bca6-4fd7-b530-000fb0bf1e01"
+    },
+    "apiVersion": "2015-08-01-preview"
+}
