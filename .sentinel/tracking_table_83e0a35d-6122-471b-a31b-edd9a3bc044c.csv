@@ -1,5 +1,4 @@
 FileName, CommitSha
-Workbooks/ThreatIntelligence_Workbook.json,338f098640fc02e104c8798a242e504c634c883b
-Playbooks/Get-AlienVault_OTX.json,222856477538b66d9cc8f8c912f23956f29090c2
 Analytic Rules/Azure_Sentinel_analytic_rule.json,6c57e6ab2caf998cc120310dead0270cc8db5737
+Playbooks/Get-AlienVault_OTX.json,222856477538b66d9cc8f8c912f23956f29090c2
 
