@@ -1,0 +1,172 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "Microsoft_Sentinel_incident": {
+                "type": "ApiConnectionWebhook",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                        }
+                    },
+                    "body": {
+                        "callback_url": "@listCallbackUrl()"
+                    },
+                    "path": "/incident-creation"
+                }
+            }
+        },
+        "actions": {
+            "For_each": {
+                "type": "Foreach",
+                "foreach": "@triggerBody()?['object']?['properties']?['Alerts']",
+                "actions": {
+                    "Alert_-_Get_incident": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                                }
+                            },
+                            "method": "get",
+                            "path": "/Incidents/subscriptions/@{encodeURIComponent(triggerBody()?['workspaceInfo']?['SubscriptionId'])}/resourceGroups/@{encodeURIComponent(triggerBody()?['workspaceInfo']?['ResourceGroupName'])}/workspaces/@{encodeURIComponent(triggerBody()?['workspaceId'])}/alerts/@{encodeURIComponent(items('For_each')?['properties']?['systemAlertId'])}"
+                        }
+                    },
+                    "Entities_-_Get_IPs": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                            "path": "/entities/ip"
+                        },
+                        "runAfter": {
+                            "Alert_-_Get_incident": [
+                                "Succeeded"
+                            ]
+                        }
+                    },
+                    "For_each_1": {
+                        "type": "Foreach",
+                        "foreach": "@body('Entities_-_Get_IPs')?['IPs']",
+                        "actions": {
+                            "Analyse_With_IPinfo": {
+                                "type": "Http",
+                                "inputs": {
+                                    "uri": "https://ipinfo.io/@{items('For_each_1')?['Address']}?token=901aa00af97857",
+                                    "method": "GET"
+                                },
+                                "runAfter": {
+                                    "Analyse_With_VirusTotal": [
+                                        "Succeeded"
+                                    ]
+                                },
+                                "runtimeConfiguration": {
+                                    "contentTransfer": {
+                                        "transferMode": "Chunked"
+                                    }
+                                }
+                            },
+                            "Analyse_With_VirusTotal": {
+                                "type": "Http",
+                                "inputs": {
+                                    "uri": "https://www.virustotal.com/api/v3/ip_addresses/@{item()?['Address']}",
+                                    "method": "GET",
+                                    "headers": {
+                                        "x-apikey": "b1305e04536d9cdf1192adcf24a80e9d4ed65de02326217433d1916de28e0886"
+                                    }
+                                },
+                                "runtimeConfiguration": {
+                                    "contentTransfer": {
+                                        "transferMode": "Chunked"
+                                    }
+                                }
+                            },
+                            "Add_comment_to_incident_(V3)": {
+                                "type": "ApiConnection",
+                                "inputs": {
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                                        }
+                                    },
+                                    "method": "post",
+                                    "body": {
+                                        "incidentArmId": "@body('Alert_-_Get_incident')?['id']",
+                                        "message": "<p class=\"editor-paragraph\">Analysis Result :</p><br><p class=\"editor-paragraph\">IPinfo Analysis :</p><p class=\"editor-paragraph\">@{body('Analyse_With_IPinfo')}</p><p class=\"editor-paragraph\"><br>VirusTotal Analysis :</p><p class=\"editor-paragraph\">@{body('Analyse_With_VirusTotal')}</p>"
+                                    },
+                                    "path": "/Incidents/Comment"
+                                },
+                                "runAfter": {
+                                    "Analyse_With_IPinfo": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            },
+                            "Send_an_email_(V2)": {
+                                "type": "ApiConnection",
+                                "inputs": {
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['office365']['connectionId']"
+                                        }
+                                    },
+                                    "method": "post",
+                                    "body": {
+                                        "To": "Issam.Abdelli@intellisecsolutions.com",
+                                        "Subject": "New Incident assigned",
+                                        "Body": "<p class=\"editor-paragraph\">New Incident assigned!</p><br><br><p class=\"editor-paragraph\">VirusTotal Analysis :</p><p class=\"editor-paragraph\">@{body('Analyse_With_VirusTotal')}</p><br><p class=\"editor-paragraph\">IPinfo Analysis :</p><p class=\"editor-paragraph\">@{body('Analyse_With_IPinfo')}</p>",
+                                        "Importance": "Normal"
+                                    },
+                                    "path": "/v2/Mail"
+                                },
+                                "runAfter": {
+                                    "Add_comment_to_incident_(V3)": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            }
+                        },
+                        "runAfter": {
+                            "Entities_-_Get_IPs": [
+                                "Succeeded"
+                            ]
+                        }
+                    }
+                },
+                "runAfter": {}
+            }
+        },
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "type": "Object",
+                "defaultValue": {}
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "type": "Object",
+            "value": {
+                "azuresentinel-1": {
+                    "id": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/providers/Microsoft.Web/locations/francecentral/managedApis/azuresentinel",
+                    "connectionId": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/resourceGroups/IntellisecMSSP/providers/Microsoft.Web/connections/azuresentinel-5",
+                    "connectionName": "azuresentinel-5"
+                },
+                "office365": {
+                    "id": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/providers/Microsoft.Web/locations/francecentral/managedApis/office365",
+                    "connectionId": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/resourceGroups/IntellisecMSSP/providers/Microsoft.Web/connections/office365-2",
+                    "connectionName": "office365-2"
+                }
+            }
+        }
+    }
+}
