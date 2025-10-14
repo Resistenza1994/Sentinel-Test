@@ -1,0 +1,286 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_Teams_Validation_Playbook_name": {
+            "defaultValue": "Teams_Validation_Playbook",
+            "type": "String"
+        },
+        "connections_azuresentinel_6_externalid": {
+            "defaultValue": "/subscriptions/90807b47-7dee-405b-b4c0-3fba658a8a72/resourceGroups/SentinelRG/providers/Microsoft.Web/connections/azuresentinel-6",
+            "type": "String"
+        },
+        "connections_teams_4_externalid": {
+            "defaultValue": "/subscriptions/90807b47-7dee-405b-b4c0-3fba658a8a72/resourceGroups/SentinelRG/providers/Microsoft.Web/connections/teams-4",
+            "type": "String"
+        },
+        "connections_office365_1_externalid": {
+            "defaultValue": "/subscriptions/90807b47-7dee-405b-b4c0-3fba658a8a72/resourceGroups/SentinelRG/providers/Microsoft.Web/connections/office365-1",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_Teams_Validation_Playbook_name')]",
+            "location": "eastus",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                                    }
+                                },
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Compose": {
+                            "runAfter": {},
+                            "type": "Compose",
+                            "inputs": {
+                                "type": "AdaptiveCard",
+                                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                                "version": "1.5",
+                                "body": [
+                                    {
+                                        "type": "TextBlock",
+                                        "text": "New Microsoft Sentinel Incident Created!",
+                                        "wrap": true,
+                                        "size": "Large",
+                                        "weight": "Bolder"
+                                    },
+                                    {
+                                        "type": "ColumnSet",
+                                        "columns": [
+                                            {
+                                                "type": "Column",
+                                                "width": "stretch",
+                                                "items": [
+                                                    {
+                                                        "type": "Image",
+                                                        "url": "https://connectoricons-prod.azureedge.net/releases/v1.0.1391/1.0.1391.2130/azuresentinel/icon.png",
+                                                        "size": "Small",
+                                                        "style": "Person"
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "type": "Column",
+                                                "width": "stretch",
+                                                "items": [
+                                                    {
+                                                        "type": "TextBlock",
+                                                        "text": "[Click here to view the Incident](@{triggerBody()?['object']?['properties']?['incidentUrl']})",
+                                                        "wrap": true,
+                                                        "size": "Medium",
+                                                        "weight": "Bolder",
+                                                        "color": "Warning"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "type": "FactSet",
+                                        "facts": [
+                                            {
+                                                "title": "Incident Title",
+                                                "value": "@{triggerBody()?['object']?['properties']?['title']}"
+                                            },
+                                            {
+                                                "title": "Incident Description",
+                                                "value": "@{triggerBody()?['object']?['properties']?['description']}"
+                                            },
+                                            {
+                                                "title": "Incident Creation Time UTC",
+                                                "value": "@{triggerBody()?['object']?['properties']?['createdTimeUtc']}"
+                                            },
+                                            {
+                                                "title": "Severity",
+                                                "value": "@{triggerBody()?['object']?['properties']?['severity']}"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "type": "TextBlock",
+                                        "text": "Respond :",
+                                        "wrap": true,
+                                        "size": "Large",
+                                        "weight": "Bolder",
+                                        "color": "Attention"
+                                    },
+                                    {
+                                        "type": "TextBlock",
+                                        "text": "Have You Entered Your Credentials on This Suspicious Page?\n",
+                                        "wrap": true,
+                                        "size": "Large",
+                                        "weight": "Bolder"
+                                    },
+                                    {
+                                        "type": "ActionSet",
+                                        "actions": [
+                                            {
+                                                "type": "Action.Submit",
+                                                "title": "YES",
+                                                "id": "Yes"
+                                            },
+                                            {
+                                                "type": "Action.Submit",
+                                                "title": "NO",
+                                                "id": "No"
+                                            }
+                                        ],
+                                        "horizontalAlignment": "Center"
+                                    },
+                                    {
+                                        "type": "TextBlock",
+                                        "text": "Thanks for your response!",
+                                        "wrap": true,
+                                        "size": "Large",
+                                        "weight": "Bolder",
+                                        "color": "Accent"
+                                    }
+                                ]
+                            }
+                        },
+                        "Publier_une_carte_adaptative_et_attendre_une_réponse": {
+                            "runAfter": {
+                                "Compose": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                    }
+                                },
+                                "body": {
+                                    "notificationUrl": "@listCallbackUrl()",
+                                    "body": {
+                                        "messageBody": "@{outputs('Compose')}",
+                                        "updateMessage": "Thanks for your response!",
+                                        "recipient": {
+                                            "groupId": "96a7b0a6-9f7c-4ceb-9941-0ef0c235fb71",
+                                            "channelId": "19:tYHif_Sbt4H2S_xVpp5Th6OjUYTM3SUICE-2OcF112Y1@thread.tacv2"
+                                        }
+                                    }
+                                },
+                                "path": "/v1.0/teams/conversation/gatherinput/poster/Flow bot/location/@{encodeURIComponent('Channel')}/$subscriptions"
+                            }
+                        },
+                        "Condition": {
+                            "actions": {
+                                "Envoyer_un_e-mail_(V2)": {
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['office365']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "body": {
+                                            "To": "Issam.Abdelli@intellisecsolutions.com",
+                                            "Subject": "⚠️ Confirmed: Credentials Were Entered on Suspicious Page",
+                                            "Body": "<p class=\"editor-paragraph\">As confirmed, the user entered their credentials on the suspicious page.<br>It’s up to you to make the final decision.<br><br>Best regards,</p>",
+                                            "Importance": "High"
+                                        },
+                                        "path": "/v2/Mail"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Publier_une_carte_adaptative_et_attendre_une_réponse": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {
+                                    "Mettre_à_jour_l’incident": {
+                                        "type": "ApiConnection",
+                                        "inputs": {
+                                            "host": {
+                                                "connection": {
+                                                    "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                                                }
+                                            },
+                                            "method": "put",
+                                            "body": {
+                                                "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                "severity": "Low",
+                                                "status": "Closed",
+                                                "classification": {
+                                                    "ClassificationAndReason": "BenignPositive - SuspiciousButExpected",
+                                                    "ClassificationReasonText": "Didn't enter credentials on the suspicious page"
+                                                }
+                                            },
+                                            "path": "/Incidents"
+                                        }
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@body('Publier_une_carte_adaptative_et_attendre_une_réponse')?['submitActionId']",
+                                            "Yes"
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel-1": {
+                                "id": "/subscriptions/90807b47-7dee-405b-b4c0-3fba658a8a72/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
+                                "connectionId": "[parameters('connections_azuresentinel_6_externalid')]",
+                                "connectionName": "azuresentinel-6"
+                            },
+                            "teams": {
+                                "id": "/subscriptions/90807b47-7dee-405b-b4c0-3fba658a8a72/providers/Microsoft.Web/locations/eastus/managedApis/teams",
+                                "connectionId": "[parameters('connections_teams_4_externalid')]",
+                                "connectionName": "teams-4"
+                            },
+                            "office365": {
+                                "id": "/subscriptions/90807b47-7dee-405b-b4c0-3fba658a8a72/providers/Microsoft.Web/locations/eastus/managedApis/office365",
+                                "connectionId": "[parameters('connections_office365_1_externalid')]",
+                                "connectionName": "office365-1"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
