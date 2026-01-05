@@ -6,16 +6,16 @@
             "defaultValue": "IP_Analysis_Incident_Playbook",
             "type": "String"
         },
-        "connections_azuresentinel_4_externalid": {
-            "defaultValue": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/resourceGroups/IntellisecMSSP/providers/Microsoft.Web/connections/azuresentinel-4",
+        "connections_azuresentinel_IP_Analysis_Incident_Playbook_externalid": {
+            "defaultValue": "/subscriptions/b159314b-9126-417e-ba87-b6038bc19ce3/resourceGroups/MSSPProdMainSentinelRG/providers/Microsoft.Web/connections/azuresentinel-IP_Analysis_Incident_Playbook",
             "type": "String"
         },
-        "connections_virustotal_externalid": {
-            "defaultValue": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/resourceGroups/IntellisecMSSP/providers/Microsoft.Web/connections/virustotal",
+        "connections_azuresentinel_Phishing_Email_Analysis_Playbook_externalid": {
+            "defaultValue": "/subscriptions/b159314b-9126-417e-ba87-b6038bc19ce3/resourceGroups/MSSPProdMainSentinelRG/providers/Microsoft.Web/connections/azuresentinel-Phishing_Email_Analysis_Playbook",
             "type": "String"
         },
-        "connections_office365_2_externalid": {
-            "defaultValue": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/resourceGroups/IntellisecMSSP/providers/Microsoft.Web/connections/office365-2",
+        "connections_office365_externalid": {
+            "defaultValue": "/subscriptions/b159314b-9126-417e-ba87-b6038bc19ce3/resourceGroups/MSSPProdMainSentinelRG/providers/Microsoft.Web/connections/office365",
             "type": "String"
         }
     },
@@ -25,7 +25,7 @@
             "type": "Microsoft.Logic/workflows",
             "apiVersion": "2017-07-01",
             "name": "[parameters('workflows_IP_Analysis_Incident_Playbook_name')]",
-            "location": "francecentral",
+            "location": "canadacentral",
             "identity": {
                 "type": "SystemAssigned"
             },
@@ -46,7 +46,7 @@
                             "inputs": {
                                 "host": {
                                     "connection": {
-                                        "name": "@parameters('$connections')['azuresentinel-1']['connectionId']"
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
                                     }
                                 },
                                 "body": {
@@ -93,21 +93,59 @@
                                 "For_each_1": {
                                     "foreach": "@body('Entities_-_Get_IPs')?['IPs']",
                                     "actions": {
-                                        "Get_an_IP_report": {
-                                            "type": "ApiConnection",
+                                        "Open_Threat_Exchange": {
+                                            "type": "Http",
                                             "inputs": {
-                                                "host": {
-                                                    "connection": {
-                                                        "name": "@parameters('$connections')['virustotal']['connectionId']"
-                                                    }
-                                                },
-                                                "method": "get",
-                                                "path": "/api/v3/ip_addresses/connectorV2/@{encodeURIComponent(item()?['Address'])}"
+                                                "uri": "https://otx.alienvault.com/api/v1/indicators/IPv4/@{items('For_each_1')?['Address']}/general",
+                                                "method": "GET",
+                                                "headers": {
+                                                    "X-OTX-API-KEY": "db8b082eeb4bfdbef272bceaab277ebbeb393e35884404e2ffcccc3508f67333"
+                                                }
+                                            },
+                                            "runtimeConfiguration": {
+                                                "contentTransfer": {
+                                                    "transferMode": "Chunked"
+                                                }
                                             }
+                                        },
+                                        "IPinfo": {
+                                            "runAfter": {
+                                                "Open_Threat_Exchange": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Http",
+                                            "inputs": {
+                                                "uri": "https://ipinfo.io/@{item()?['Address']}?token=b003659697fa2e",
+                                                "method": "GET"
+                                            },
+                                            "runtimeConfiguration": {
+                                                "contentTransfer": {
+                                                    "transferMode": "Chunked"
+                                                }
+                                            }
+                                        },
+                                        "Compose_For_Comment_Version": {
+                                            "runAfter": {
+                                                "IPinfo": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Compose",
+                                            "inputs": "@concat(\r\n'🚨 **OTX Analysis Result**:\n\n',\r\n'🌐 **IP Address**: ', body('Open_Threat_Exchange')?['indicator'], '\n',\r\n'📍 **Country**: ', body('Open_Threat_Exchange')?['country_name'], '\n',\r\n'🌎 **Region**: ', body('Open_Threat_Exchange')?['region'], '\n',\r\n'🏙️ **City**: ', body('Open_Threat_Exchange')?['city'], '\n',\r\n'🔢 **ASN**: ', body('Open_Threat_Exchange')?['asn'], '\n',\r\n'⭐ **Reputation Score**: ', string(body('Open_Threat_Exchange')?['reputation']), '\n',\r\n'🔍 **Whois Link**: ', body('Open_Threat_Exchange')?['whois'], '\n',\r\n'☁️ **Cloud Info**: ', body('Open_Threat_Exchange')?['validation']?[0]?['message'], '\n',\r\n'🔥 **Alert Triggered!** 🚨\n\n',\r\n\r\n'🚨 **IPinfo Analysis Result**:\n\n',\r\n'🌐 **IP Address**: ', body('IPinfo')?['ip'], '\n',\r\n'📍 **Country**: ', body('IPinfo')?['country'], '\n',\r\n'🌎 **Region**: ', body('IPinfo')?['region'], '\n',\r\n'🏙️ **City**: ', body('IPinfo')?['city'], '\n',\r\n'🗺️ **Location**: ', body('IPinfo')?['loc'], '\n',\r\n'🖥️ **Org**: ', body('IPinfo')?['org'], '\n',\r\n'📮 **Postal Code**: ', body('IPinfo')?['postal'], '\n',\r\n'⏰ **Timezone**: ', body('IPinfo')?['timezone'], '\n',\r\n'🔥 **Alert Triggered!** 🚨'\r\n)"
+                                        },
+                                        "Compose_For_Email_Version": {
+                                            "runAfter": {
+                                                "Compose_For_Comment_Version": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Compose",
+                                            "inputs": "@concat(\r\n    '<p>🚨 <strong>OTX Analysis Result</strong>:</p>',\r\n    '<p>🌐 <strong>IP Address</strong>: ', body('Open_Threat_Exchange')?['indicator'], ' </p>',\r\n    '<p>📍 <strong>Country</strong>: ', body('Open_Threat_Exchange')?['country_name'], ' </p>',\r\n    '<p>🌎 <strong>Region</strong>: ', body('Open_Threat_Exchange')?['region'], ' </p>',\r\n    '<p>🏙️ <strong>City</strong>: ', body('Open_Threat_Exchange')?['city'], ' </p>',\r\n    '<p>🔢 <strong>ASN</strong>: ', body('Open_Threat_Exchange')?['asn'], ' </p>',\r\n    '<p>⭐ <strong>Reputation Score</strong>: ', string(body('Open_Threat_Exchange')?['reputation']), ' </p>',\r\n    '<p>🔍 <strong>Whois Link</strong>: <a href=\"', body('Open_Threat_Exchange')?['whois'], '\">', body('Open_Threat_Exchange')?['whois'], '</a> </p>',\r\n    '<p>☁️ <strong>Cloud Info</strong>: ', body('Open_Threat_Exchange')?['validation']?[0]?['message'], ' </p>',\r\n    '<p>🔥 <strong>Alert Triggered!</strong> 🚨</p>',\r\n    \r\n    '<p><hr style=\"border: 1px solid #ddd; margin: 20px 0;\"></p>',\r\n    \r\n    '<p>🚨 <strong>IPinfo Analysis Result</strong>:</p>',\r\n    '<p>🌐 <strong>IP Address</strong>: ', body('IPinfo')?['ip'], ' </p>',\r\n    '<p>📍 <strong>Country</strong>: ', body('IPinfo')?['country'], ' </p>',\r\n    '<p>🌎 <strong>Region</strong>: ', body('IPinfo')?['region'], ' </p>',\r\n    '<p>🏙️ <strong>City</strong>: ', body('IPinfo')?['city'], ' </p>',\r\n    '<p>🗺️ <strong>Location</strong>: ', body('IPinfo')?['loc'], ' </p>',\r\n    '<p>🖥️ <strong>Org</strong>: ', body('IPinfo')?['org'], ' </p>',\r\n    '<p>📮 <strong>Postal Code</strong>: ', body('IPinfo')?['postal'], ' </p>',\r\n    '<p>⏰ <strong>Timezone</strong>: ', body('IPinfo')?['timezone'], ' </p>',\r\n    '<p>🔥 <strong>Alert Triggered!</strong> 🚨</p>'\r\n)"
                                         },
                                         "Add_comment_to_incident_(V3)": {
                                             "runAfter": {
-                                                "MessageBody": [
+                                                "Compose_For_Email_Version": [
                                                     "Succeeded"
                                                 ]
                                             },
@@ -121,7 +159,7 @@
                                                 "method": "post",
                                                 "body": {
                                                     "incidentArmId": "@body('Alert_-_Get_incident')?['id']",
-                                                    "message": "<p class=\"editor-paragraph\">***VirusTotal Analysis Result***</p><br><p class=\"editor-paragraph\">Owner : @{body('Get_an_IP_report')?['data']?['attributes']?['as_owner']}</p><p class=\"editor-paragraph\">Country : @{body('Get_an_IP_report')?['data']?['attributes']?['country']}</p><p class=\"editor-paragraph\">Last analysis statistics Malicious : @{body('Get_an_IP_report')?['data']?['attributes']?['last_analysis_stats']?['malicious']}</p><p class=\"editor-paragraph\">Last analysis statistics Suspicious : @{body('Get_an_IP_report')?['data']?['attributes']?['last_analysis_stats']?['suspicious']}</p><br><p class=\"editor-paragraph\">***IPinfo Analysis Result***</p><p class=\"editor-paragraph\"><br>@{body('Analyse_With_IPinfo')}</p>"
+                                                    "message": "<p class=\"editor-paragraph\">@{outputs('Compose_For_Comment_Version')}</p>"
                                                 },
                                                 "path": "/Incidents/Comment"
                                             }
@@ -136,84 +174,18 @@
                                             "inputs": {
                                                 "host": {
                                                     "connection": {
-                                                        "name": "@parameters('$connections')['office365-1']['connectionId']"
+                                                        "name": "@parameters('$connections')['office365']['connectionId']"
                                                     }
                                                 },
                                                 "method": "post",
                                                 "body": {
-                                                    "To": "Issam.Abdelli@intellisecsolutions.com",
-                                                    "Subject": "New Incident assigned",
-                                                    "Body": "<p class=\"editor-paragraph\">New Incident assigned!</p><br><p class=\"editor-paragraph\">Title : @{triggerBody()?['object']?['properties']?['title']}</p><p class=\"editor-paragraph\">Severity : @{body('Alert_-_Get_incident')?['properties']?['severity']}</p><p class=\"editor-paragraph\">Description : @{triggerBody()?['object']?['properties']?['description']}</p><p class=\"editor-paragraph\">Incident URL : @{body('Alert_-_Get_incident')?['properties']?['incidentUrl']}<br><br>***VirusTotal Analysis***</p><p class=\"editor-paragraph\">Last analysis statistics Malicious : @{body('Get_an_IP_report')?['data']?['attributes']?['last_analysis_stats']?['malicious']}<br>Last analysis statistics Suspicious : @{body('Get_an_IP_report')?['data']?['attributes']?['last_analysis_stats']?['suspicious']}</p><br><p class=\"editor-paragraph\">***IPinfo Analysis Result***</p><p class=\"editor-paragraph\">@{body('Analyse_With_IPinfo')}</p><br>",
-                                                    "Importance": "High"
+                                                    "To": "Issam.Abdelli@intellisecsolutions.ca",
+                                                    "Subject": "🔍 IP Analysis Result",
+                                                    "Body": "<p class=\"editor-paragraph\">@{outputs('Compose_For_Email_Version')}</p>",
+                                                    "Importance": "Normal"
                                                 },
                                                 "path": "/v2/Mail"
                                             }
-                                        },
-                                        "Analyse_With_IPinfo": {
-                                            "runAfter": {
-                                                "Get_an_IP_report": [
-                                                    "Succeeded"
-                                                ]
-                                            },
-                                            "type": "Http",
-                                            "inputs": {
-                                                "uri": "https://ipinfo.io/@{item()?['Address']}?token=901aa00af97857",
-                                                "method": "GET"
-                                            },
-                                            "runtimeConfiguration": {
-                                                "contentTransfer": {
-                                                    "transferMode": "Chunked"
-                                                }
-                                            }
-                                        },
-                                        "Parse_JSON": {
-                                            "runAfter": {
-                                                "Analyse_With_IPinfo": [
-                                                    "Succeeded"
-                                                ]
-                                            },
-                                            "type": "ParseJson",
-                                            "inputs": {
-                                                "content": "@body('Analyse_With_IPinfo')",
-                                                "schema": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "ip": {
-                                                            "type": "string"
-                                                        },
-                                                        "city": {
-                                                            "type": "string"
-                                                        },
-                                                        "region": {
-                                                            "type": "string"
-                                                        },
-                                                        "country": {
-                                                            "type": "string"
-                                                        },
-                                                        "loc": {
-                                                            "type": "string"
-                                                        },
-                                                        "org": {
-                                                            "type": "string"
-                                                        },
-                                                        "postal": {
-                                                            "type": "string"
-                                                        },
-                                                        "timezone": {
-                                                            "type": "string"
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        "MessageBody": {
-                                            "runAfter": {
-                                                "Parse_JSON": [
-                                                    "Succeeded"
-                                                ]
-                                            },
-                                            "type": "Compose",
-                                            "inputs": "IPInfo Report:\n\nCountry: @{body('Parse_JSON')?['country']}\n"
                                         }
                                     },
                                     "runAfter": {
@@ -233,20 +205,31 @@
                 "parameters": {
                     "$connections": {
                         "value": {
+                            "azuresentinel": {
+                                "id": "/subscriptions/b159314b-9126-417e-ba87-b6038bc19ce3/providers/Microsoft.Web/locations/canadacentral/managedApis/azuresentinel",
+                                "connectionId": "[parameters('connections_azuresentinel_IP_Analysis_Incident_Playbook_externalid')]",
+                                "connectionName": "[concat('azuresentinel-', parameters('workflows_IP_Analysis_Incident_Playbook_name'))]",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            },
                             "azuresentinel-1": {
-                                "id": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/providers/Microsoft.Web/locations/francecentral/managedApis/azuresentinel",
-                                "connectionId": "[parameters('connections_azuresentinel_4_externalid')]",
-                                "connectionName": "azuresentinel-4"
+                                "id": "/subscriptions/b159314b-9126-417e-ba87-b6038bc19ce3/providers/Microsoft.Web/locations/canadacentral/managedApis/azuresentinel",
+                                "connectionId": "[parameters('connections_azuresentinel_Phishing_Email_Analysis_Playbook_externalid')]",
+                                "connectionName": "azuresentinel-Phishing_Email_Analysis_Playbook",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
                             },
-                            "virustotal": {
-                                "id": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/providers/Microsoft.Web/locations/francecentral/managedApis/virustotal",
-                                "connectionId": "[parameters('connections_virustotal_externalid')]",
-                                "connectionName": "virustotal"
-                            },
-                            "office365-1": {
-                                "id": "/subscriptions/9ec51404-df8b-4912-90a1-a7aebed5cd80/providers/Microsoft.Web/locations/francecentral/managedApis/office365",
-                                "connectionId": "[parameters('connections_office365_2_externalid')]",
-                                "connectionName": "office365-2"
+                            "office365": {
+                                "id": "/subscriptions/b159314b-9126-417e-ba87-b6038bc19ce3/providers/Microsoft.Web/locations/canadacentral/managedApis/office365",
+                                "connectionId": "[parameters('connections_office365_externalid')]",
+                                "connectionName": "office365",
+                                "connectionProperties": {}
                             }
                         }
                     }
